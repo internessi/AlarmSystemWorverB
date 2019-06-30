@@ -1,18 +1,18 @@
-#include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include "SPI.h"
+#include "Wire.h"
+#include "SSD1306.h" 
+ 
+SSD1306  display(0x3c, 21, 22);
+
+#define DRAW_DELAY 118
+#define D_NUM 47
 
 unsigned long currentTime, lastTime;
 boolean       encA, encB, lastAB = false, rotary_switch = false;
-int           rotary_event_1 = 0;
+int           rotary_event_1 = 0, i;
 
 void setup() {
-  delay(500);
   Serial.begin(115200);
-  
-
-
 //
 //  LED(1,1000);      // rot
 //  LED(2,1000);      // grün
@@ -34,32 +34,40 @@ void setup() {
   pinMode       (33, INPUT_PULLUP); // rotary pin as input with internal pullups
   pinMode       (2, INPUT_PULLUP);         // rotary switch pin 
   rotary_switch = false;
+  
+  pinMode       (23, OUTPUT);       // DISPLAY
+  digitalWrite(23, HIGH);   
 
-
+  delay(500);
   Serial.println("Starting up");
   BUZZ(250);
 
+  display.init();
+  display.drawString(0, 0, "Hello World");
+  display.display();
+
+  
+  // Interrupt initialisieren für RotarySwitch
   attachInterrupt(digitalPinToInterrupt(2), INT_RotarySwitch, CHANGE);
 }
 
 void loop() {
+
+
 
   // Wenn Rotary Switch
   if (rotary_switch){
     Serial.println("Switch betaetigt"); //... das Signal ausgegeben wurde, wird das Programm fortgeführt.
     BUZZ(250);
     rotary_switch = false;
-  }
-
-
+    }
   // Wenn Rotary plus - minus
   if (!rotary_event_1 == 0){
-      Serial.println(rotary_event_1);
-         BUZZ(30);
-      rotary_event_1 = 0;
-  }
-
-
+    Serial.println(rotary_event_1);
+       BUZZ(30);
+    rotary_event_1 = 0;
+    }
+  // Rotary prüfen
   ROTARY();
 }
 
