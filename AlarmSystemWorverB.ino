@@ -1,15 +1,27 @@
-#include "SPI.h"
-#include "Wire.h"
-#include "SSD1306.h" 
- 
-SSD1306  display(0x3c, 21, 22);
+#include <SPI.h>
+#include <Wire.h>
+#include <SSD1306.h> 
+#include <Encoder.h>  
+#include <RCSwitch.h>
 
+ 
 #define DRAW_DELAY 118
 #define D_NUM 47
+#define ENC_A   32
+#define ENC_B   33
 
-unsigned long currentTime, lastTime;
-boolean       encA, encB, lastAB = false, rotary_switch = false;
-int           rotary_event_1 = 0, i;
+int sekunde, minute, stunde, tag, wota, monat, jahr;
+
+unsigned long currentTime, lastTime, ReceivedValue;
+unsigned int progress, total;
+boolean       rotary_switch = false;
+int           rotary_event = 0, i;
+long          positionENC = 0, newENC;
+String        out;
+
+SSD1306  display(0x3c, 21, 22);
+Encoder  ENC(ENC_B, ENC_A);
+RCSwitch mySwitch = RCSwitch();
 
 void setup() {
   Serial.begin(115200);
@@ -30,63 +42,115 @@ void setup() {
   LED_OFF();
   BUZZ_OFF();
   
-  pinMode       (32, INPUT_PULLUP); // rotary pin as input with internal pullups
-  pinMode       (33, INPUT_PULLUP); // rotary pin as input with internal pullups
+
   pinMode       (2, INPUT_PULLUP);         // rotary switch pin 
   rotary_switch = false;
-  
-  pinMode       (23, OUTPUT);       // DISPLAY
-  digitalWrite(23, HIGH);   
+
+  progress = 0;
+  total = 100;
 
   delay(500);
   Serial.println("Starting up");
   BUZZ(250);
 
-  display.init();
-  display.drawString(0, 0, "Hello World");
-  display.display();
+
+  
+
+display.init();
+display.setContrast(255);
+display_top();
+display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
+display.display();
+
 
   
   // Interrupt initialisieren für RotarySwitch
   attachInterrupt(digitalPinToInterrupt(2), INT_RotarySwitch, CHANGE);
+  // Interrupt initialisieren für RCSwitch
+  mySwitch.enableReceive(digitalPinToInterrupt(15));
 }
 
 void loop() {
 
+  if (mySwitch.available()) {
+    
+    display_top();
+    display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
+
+    ReceivedValue = mySwitch.getReceivedValue();
+    out = String(ReceivedValue);
+ 
+    display.setFont(ArialMT_Plain_24);
+    display.setTextAlignment(TEXT_ALIGN_CENTER);
+    display.drawString(display.getWidth()/2, 38, out);
+    
+    display.display();
+    
+    Serial.print("Received ");
+    Serial.print( mySwitch.getReceivedValue() );
+    Serial.print(" / ");
+    Serial.print( mySwitch.getReceivedDelay() );
+    Serial.print("bit ");
+    Serial.print("Protocol: ");
+    Serial.println( mySwitch.getReceivedProtocol() );   
+    
+    mySwitch.resetAvailable();
+  }
 
 
   // Wenn Rotary Switch
   if (rotary_switch){
-    Serial.println("Switch betaetigt"); //... das Signal ausgegeben wurde, wird das Programm fortgeführt.
+    Serial.println(display.getWidth()/2); //... das Signal ausgegeben wurde, wird das Programm fortgeführt.
+  
+    progress = progress + 10;
+    display_top();
+    display.drawProgressBar(4, 29, 120, 8, progress / (total / 100) );
+    display.display();
+    
     BUZZ(250);
     rotary_switch = false;
     }
   // Wenn Rotary plus - minus
-  if (!rotary_event_1 == 0){
-    Serial.println(rotary_event_1);
-       BUZZ(30);
-    rotary_event_1 = 0;
+  if (!rotary_event == 0){
+    progress = progress + rotary_event;
+    display_top();
+    display.drawProgressBar(4, 29, 120, 8, progress / (total / 100) );
+    display.display();
+    Serial.println(progress);
+       BUZZ(20);
+    rotary_event = 0;
     }
   // Rotary prüfen
-  ROTARY();
+  read_encoder();
 }
 
+// START  display_top()
+void display_top() {
+  display.clear();
+  display.setFont(ArialMT_Plain_24);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(display.getWidth()/2, 1, "alarm4u.de");
+} // END  display_top()
 
+// START  read_encoder()
+void read_encoder() {
+  newENC= ENC.read();
+  if  (newENC != positionENC) {positionENC= newENC;}
+  if  (positionENC > 3)   {
+      ENC.write(0);
+      positionENC = 0;
+      rotary_event = 1;   }
+  if (positionENC < -3)   {
+      ENC.write(0);
+      positionENC = 0;
+      rotary_event = -1;  }  
+} // END  read_encoder()
 
+// START  INT_RotarySwitch()
 void INT_RotarySwitch() {rotary_switch = true;}
+// END    INT_RotarySwitch()
 
-void ROTARY() {
-  currentTime = millis();
-  if(currentTime >= (lastTime + 10))
-  {
-    encA = digitalRead(32);
-    encB = digitalRead(33);
-    if ((!encA) && (lastAB)){if (encB){rotary_event_1 = rotary_event_1 + 1;}else{rotary_event_1 = rotary_event_1 - 1;}}
-    lastAB = encA;
-    lastTime = currentTime;
-  }
-}
-
+// START  LED(int LED, double zeit)
 int LED(int LED, double zeit){
   if (LED == 1){
     digitalWrite(25, LOW);  
@@ -118,7 +182,7 @@ int LED(int LED, double zeit){
   digitalWrite(25, HIGH);   
   digitalWrite(26, HIGH);
   digitalWrite(27, HIGH);
-}
+}// END   LED(int LED, double zeit) 
 
 
 void LED_OFF() {
