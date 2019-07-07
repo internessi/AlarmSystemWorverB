@@ -107,7 +107,7 @@ void loop() {
     display.drawProgressBar(4, 29, 120, 8, progress / (total / 100) );
     display.display();
     
-    BUZZ(250);
+    BUZZ(2);
     rotary_switch = false;
     }
   // Wenn Rotary plus - minus
@@ -117,7 +117,7 @@ void loop() {
     display.drawProgressBar(4, 29, 120, 8, progress / (total / 100) );
     display.display();
     Serial.println(progress);
-       BUZZ(20);
+       BUZZ(2);
     rotary_event = 0;
     }
   // Rotary prüfen
