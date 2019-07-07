@@ -3,21 +3,25 @@
 #include <SSD1306.h> 
 #include <Encoder.h>  
 #include <RCSwitch.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
- 
 #define DRAW_DELAY 118
 #define D_NUM 47
 #define ENC_A   32
 #define ENC_B   33
+#define FORMAT_SPIFFS_IF_FAILED true
 
-int sekunde, minute, stunde, tag, wota, monat, jahr;
-
+int           sekunde, minute, stunde, tag, wota, monat, jahr;
 unsigned long currentTime, lastTime, ReceivedValue;
-unsigned int progress, total;
+unsigned long sensor_l [100];
+int           sensor_i [100][5];
+unsigned int  progress, total;
 boolean       rotary_switch = false;
 int           rotary_event = 0, i;
 long          positionENC = 0, newENC;
-String        out;
+String        out, in;
+char          buffer[30];
 
 SSD1306  display(0x3c, 21, 22);
 Encoder  ENC(ENC_B, ENC_A);
@@ -42,7 +46,6 @@ void setup() {
   LED_OFF();
   BUZZ_OFF();
   
-
   pinMode       (2, INPUT_PULLUP);         // rotary switch pin 
   rotary_switch = false;
 
@@ -51,18 +54,25 @@ void setup() {
 
   delay(500);
   Serial.println("Starting up");
-  BUZZ(250);
+  BUZZ(20);
 
+  if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
+    Serial.println("SPIFFS Mount Failed");
+    return;
+  }
+  delay(100);
+  if(!SPIFFS.exists("/sensoren.csv")){
+    writeFile(SPIFFS, "/sensoren.csv", "ID;TYPE;ZONE;BIT;PRO;TIME\r\n");
+    Serial.println("write");
+  }
 
-  
+  read_to_sram(SPIFFS, "/sensoren.csv");
 
-display.init();
-display.setContrast(255);
-display_top();
-display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
-display.display();
-
-
+  display.init();
+  display.setContrast(255);
+  display_top();
+  display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
+  display.display();
   
   // Interrupt initialisieren für RotarySwitch
   attachInterrupt(digitalPinToInterrupt(2), INT_RotarySwitch, CHANGE);
@@ -83,18 +93,14 @@ void loop() {
     display.setFont(ArialMT_Plain_24);
     display.setTextAlignment(TEXT_ALIGN_CENTER);
     display.drawString(display.getWidth()/2, 38, out);
-    
     display.display();
-    
-    Serial.print("Received ");
-    Serial.print( mySwitch.getReceivedValue() );
-    Serial.print(" / ");
-    Serial.print( mySwitch.getReceivedDelay() );
-    Serial.print("bit ");
-    Serial.print("Protocol: ");
-    Serial.println( mySwitch.getReceivedProtocol() );   
-    
+
+    write_new_sensor();
+
+
     mySwitch.resetAvailable();
+
+    readFile(SPIFFS, "/sensoren.csv");
   }
 
 
@@ -123,6 +129,35 @@ void loop() {
   // Rotary prüfen
   read_encoder();
 }
+
+void read_to_sram(fs::FS &fs, const char * path){
+    Serial.printf("read_to_sram: %s\r\n", path);
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed");
+        return;
+    }
+    Serial.println("- reading:");
+    
+    i= file.readBytesUntil('\n', buffer, sizeof(buffer));
+    buffer[i] = 0;
+    Serial.println(buffer);
+    
+    while(file.available()){
+      i= file.readBytesUntil('\n', buffer, sizeof(buffer));
+      buffer[i] = 0;
+      Serial.println(buffer);
+    }
+
+
+
+
+
+
+
+    
+}
+
 
 // START  display_top()
 void display_top() {
@@ -198,4 +233,73 @@ int BUZZ(double zeit){
 }
 void BUZZ_OFF() {
   digitalWrite  (4, LOW);
+}
+
+void appendFile(fs::FS &fs, const char * path, String text){
+    Serial.printf("Appending to file: %s\r\n", path);
+    const char * message = text.c_str();
+    File file = fs.open(path, FILE_APPEND);
+    if(!file){
+        Serial.println("- failed to open file for appending");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- message appended");
+    } else {
+        Serial.println("- append failed");
+    }
+}
+
+void writeFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Writing file: %s\r\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("- failed to open file for writing");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- file written");
+    } else {
+        Serial.println("- frite failed");
+    }
+}
+
+void readFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\r\n", path);
+
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed to open file for reading");
+        return;
+    }
+
+    Serial.println("- read from file:");
+    while(file.available()){
+        Serial.write(file.read());
+    }
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+    Serial.printf("Deleting file: %s\r\n", path);
+    if(fs.remove(path)){
+        Serial.println("- file deleted");
+    } else {
+        Serial.println("- delete failed");
+    }
+}
+
+void delete_write(){
+  if(SPIFFS.exists("/sensoren.csv")){
+    deleteFile(SPIFFS, "/sensoren.csv");
+  }
+  delay(100);
+  if(!SPIFFS.exists("/sensoren.csv")){
+    writeFile(SPIFFS, "/sensoren.csv", "ID;TYPE;ZONE;BIT;PRO;TIME\r\n");
+  }
+}
+
+void write_new_sensor(){
+    out = String(mySwitch.getReceivedValue()) + ";" + String(progress) + ";" + String(1) + ";" + String(mySwitch.getReceivedBitlength()) + ";" + String(mySwitch.getReceivedProtocol()) + ";" + String(mySwitch.getReceivedDelay()) + "\r\n";
+    appendFile(SPIFFS, "/sensoren.csv",out); // ID;TYPE;ZONE;BIT;PRO;TIME\r\n
 }
