@@ -14,14 +14,14 @@
 
 int           sekunde, minute, stunde, tag, wota, monat, jahr;
 unsigned long currentTime, lastTime, ReceivedValue;
-unsigned long sensor_l [100];
-int           sensor_i [100][5];
+unsigned long sID [100];    //;TYPE;ZONE;BIT;PRO;TIME
+int           sTYPE [100], sZONE [100], sBIT [100], sPRO [100], sTIME [100];
 unsigned int  progress, total;
 boolean       rotary_switch = false;
 int           rotary_event = 0, i;
 long          positionENC = 0, newENC;
 String        out, in;
-char          buffer[30];
+char          puffer[30];
 
 SSD1306  display(0x3c, 21, 22);
 Encoder  ENC(ENC_B, ENC_A);
@@ -139,14 +139,59 @@ void read_to_sram(fs::FS &fs, const char * path){
     }
     Serial.println("- reading:");
     
-    i= file.readBytesUntil('\n', buffer, sizeof(buffer));
-    buffer[i] = 0;
-    Serial.println(buffer);
-    
+    i= file.readBytesUntil('\n', puffer, sizeof(puffer));
+      puffer[i] = 0;
+      in = puffer;
+      Serial.println(in);
+    int x = 0;
     while(file.available()){
-      i= file.readBytesUntil('\n', buffer, sizeof(buffer));
-      buffer[i] = 0;
-      Serial.println(buffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sID[x] = atol(puffer);
+        int y = 0;
+        for (y; y < x; y++) {
+            if (sID[x] == sID[y]) {
+               y=998;
+               sID[x] = 0;           
+            }
+        }
+       
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sTYPE[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sZONE[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sBIT[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sPRO[x] = atoi(puffer);
+      i= file.readBytesUntil('\n', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sTIME[x] = atoi(puffer);
+
+      
+      Serial.print(sID[x], DEC);
+      Serial.print(";"); 
+      Serial.print(sTYPE[x], DEC);
+      Serial.print(";"); 
+      Serial.print(sZONE[x], DEC);
+      Serial.print(";"); 
+      Serial.print(sBIT[x], DEC);
+      Serial.print(";"); 
+      Serial.print(sPRO[x], DEC);
+      Serial.print(";"); 
+      Serial.print(sTIME[x], DEC);
+      Serial.print(";"); 
+      Serial.print(x, DEC);
+      Serial.print(";"); 
+      Serial.println(y, DEC);
+
+      if (y < 999){
+        x++;
+      }
     }
 
 
