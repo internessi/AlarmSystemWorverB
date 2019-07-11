@@ -5,12 +5,14 @@
 #include <RCSwitch.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <RtcDS1307.h>
 
 #define DRAW_DELAY 118
 #define D_NUM 47
 #define ENC_A   32
 #define ENC_B   33
 #define FORMAT_SPIFFS_IF_FAILED true
+#define countof(a) (sizeof(a) / sizeof(a[0]))
 
 int           sekunde, minute, stunde, tag, wota, monat, jahr;
 unsigned long currentTime, lastTime, ReceivedValue;
@@ -26,6 +28,7 @@ char          puffer[30];
 SSD1306  display(0x3c, 21, 22);
 Encoder  ENC(ENC_B, ENC_A);
 RCSwitch mySwitch = RCSwitch();
+RtcDS1307<TwoWire> Rtc(Wire);
 
 void setup() {
   Serial.begin(115200);
@@ -52,24 +55,36 @@ void setup() {
   progress = 0;
   total = 100;
 
-  delay(500);
-  Serial.println("Starting up");
+  display.init();
+  display.setContrast(255);
+  display_text("starting");
   BUZZ(20);
+  LED(1,600);
+
+
+  // Wire.begin(21,22); // due to limited pins, use pin 0 and 2 for SDA, SCL
+  Rtc.Begin();
+  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+  printDateTime(compiled);
+  RtcDateTime now = Rtc.GetDateTime();
+  printDateTime(now);
+  Serial.println();
+ 
 
   if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
     Serial.println("SPIFFS Mount Failed");
     return;
   }
-  delay(100);
   if(!SPIFFS.exists("/sensoren.csv")){
     writeFile(SPIFFS, "/sensoren.csv", "ID;TYPE;ZONE;BIT;PRO;TIME\r\n");
-    Serial.println("write");
+    Serial.println("write sensoren.csv");
   }
-
-  read_to_sram(SPIFFS, "/sensoren.csv");
-
-  display.init();
-  display.setContrast(255);
+  display_text("cleaning up");
+  read_spiffs_to_sram(SPIFFS, "/sensoren.csv");
+  write_sram_to_spiffs();
+  LED(2,600);
+  display_text("ready");
+  LED(3,600);
   display_top();
   display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
   display.display();
@@ -105,14 +120,13 @@ void loop() {
 
 
   // Wenn Rotary Switch
-  if (rotary_switch){
+  if (rotary_switch && digitalRead(2)){
     Serial.println(display.getWidth()/2); //... das Signal ausgegeben wurde, wird das Programm fortgeführt.
   
     progress = progress + 10;
     display_top();
     display.drawProgressBar(4, 29, 120, 8, progress / (total / 100) );
     display.display();
-    
     BUZZ(2);
     rotary_switch = false;
     }
@@ -130,78 +144,17 @@ void loop() {
   read_encoder();
 }
 
-void read_to_sram(fs::FS &fs, const char * path){
-    Serial.printf("read_to_sram: %s\r\n", path);
-    File file = fs.open(path);
-    if(!file || file.isDirectory()){
-        Serial.println("- failed");
-        return;
-    }
-    Serial.println("- reading:");
-    
-    i= file.readBytesUntil('\n', puffer, sizeof(puffer));
-      puffer[i] = 0;
-      in = puffer;
-      Serial.println(in);
-    int x = 0;
-    while(file.available()){
-      i= file.readBytesUntil(';', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sID[x] = atol(puffer);
-        int y = 0;
-        for (y; y < x; y++) {
-            if (sID[x] == sID[y]) {
-               y=998;
-               sID[x] = 0;           
-            }
-        }
-       
-      i= file.readBytesUntil(';', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sTYPE[x] = atoi(puffer);
-      i= file.readBytesUntil(';', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sZONE[x] = atoi(puffer);
-      i= file.readBytesUntil(';', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sBIT[x] = atoi(puffer);
-      i= file.readBytesUntil(';', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sPRO[x] = atoi(puffer);
-      i= file.readBytesUntil('\n', puffer, sizeof(puffer));
-        puffer[i] = 0;
-        sTIME[x] = atoi(puffer);
-
-      
-      Serial.print(sID[x], DEC);
-      Serial.print(";"); 
-      Serial.print(sTYPE[x], DEC);
-      Serial.print(";"); 
-      Serial.print(sZONE[x], DEC);
-      Serial.print(";"); 
-      Serial.print(sBIT[x], DEC);
-      Serial.print(";"); 
-      Serial.print(sPRO[x], DEC);
-      Serial.print(";"); 
-      Serial.print(sTIME[x], DEC);
-      Serial.print(";"); 
-      Serial.print(x, DEC);
-      Serial.print(";"); 
-      Serial.println(y, DEC);
-
-      if (y < 999){
-        x++;
-      }
-    }
+// START  display_text()
+void display_text(String text) {
+    display_top();
+    display.drawProgressBar(4, 29, 120, 8, 100 / (total / 100) );
+    display.setFont(ArialMT_Plain_24);
+    display.setTextAlignment(TEXT_ALIGN_CENTER);
+    display.drawString(display.getWidth()/2, 38, text);
+    display.display();
+} // END  display_text()
 
 
-
-
-
-
-
-    
-}
 
 
 // START  display_top()
@@ -281,38 +234,29 @@ void BUZZ_OFF() {
 }
 
 void appendFile(fs::FS &fs, const char * path, String text){
-    Serial.printf("Appending to file: %s\r\n", path);
     const char * message = text.c_str();
     File file = fs.open(path, FILE_APPEND);
     if(!file){
         Serial.println("- failed to open file for appending");
         return;
     }
-    if(file.print(message)){
-        Serial.println("- message appended");
-    } else {
+    if(!file.print(message)){
         Serial.println("- append failed");
     }
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
-    Serial.printf("Writing file: %s\r\n", path);
-
     File file = fs.open(path, FILE_WRITE);
     if(!file){
         Serial.println("- failed to open file for writing");
         return;
     }
-    if(file.print(message)){
-        Serial.println("- file written");
-    } else {
+    if(!file.print(message)){
         Serial.println("- frite failed");
     }
 }
 
 void readFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\r\n", path);
-
     File file = fs.open(path);
     if(!file || file.isDirectory()){
         Serial.println("- failed to open file for reading");
@@ -326,10 +270,7 @@ void readFile(fs::FS &fs, const char * path){
 }
 
 void deleteFile(fs::FS &fs, const char * path){
-    Serial.printf("Deleting file: %s\r\n", path);
-    if(fs.remove(path)){
-        Serial.println("- file deleted");
-    } else {
+    if(!fs.remove(path)){
         Serial.println("- delete failed");
     }
 }
@@ -347,4 +288,80 @@ void delete_write(){
 void write_new_sensor(){
     out = String(mySwitch.getReceivedValue()) + ";" + String(progress) + ";" + String(1) + ";" + String(mySwitch.getReceivedBitlength()) + ";" + String(mySwitch.getReceivedProtocol()) + ";" + String(mySwitch.getReceivedDelay()) + "\r\n";
     appendFile(SPIFFS, "/sensoren.csv",out); // ID;TYPE;ZONE;BIT;PRO;TIME\r\n
+}
+
+// START read_spiffs_to_sram()
+void read_spiffs_to_sram(fs::FS &fs, const char * path){
+    Serial.printf("clean up and read to sram \r\n");
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed");
+        return;
+    }
+    i= file.readBytesUntil('\n', puffer, sizeof(puffer));
+      puffer[i] = 0;
+    int x = 0;
+    while(file.available()){
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sID[x] = atol(puffer);
+        int y = 0;
+        for (y; y < x; y++) {
+            if (sID[x] == sID[y]) {
+               y=998;
+               sID[x] = 0;           
+            }
+        }
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sTYPE[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sZONE[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sBIT[x] = atoi(puffer);
+      i= file.readBytesUntil(';', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sPRO[x] = atoi(puffer);
+      i= file.readBytesUntil('\n', puffer, sizeof(puffer));
+        puffer[i] = 0;
+        sTIME[x] = atoi(puffer);
+      if (y < 999){
+        x++;
+      }
+    }
+} // END read_spiffs_to_sram()
+
+
+
+// START write_sram_to_spiffs()
+void write_sram_to_spiffs(){
+  Serial.printf("write sram to spiffs \r\n");
+  deleteFile(SPIFFS, "/sensoren.csv");
+  writeFile(SPIFFS, "/sensoren.csv", "ID;TYPE;ZONE;BIT;PRO;TIME\r\n");
+  for (int x = 0; x < 100; x++) {
+    if (sID[x] > 0) {
+      out = String(sID[x]) + ";" + String(sTYPE[x]) + ";" + String(sZONE[x]) + ";" + String(sBIT[x]) + ";" + String(sPRO[x]) + ";" + String(sTIME[x]) + "\r\n";     
+      appendFile(SPIFFS, "/sensoren.csv", out);   
+    }
+  }
+}// END write_sram_to_spiffs()
+
+
+
+void printDateTime(const RtcDateTime& dt)
+{
+    char datestring[20];
+
+    snprintf_P(datestring, 
+            countof(datestring),
+            PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
+            dt.Month(),
+            dt.Day(),
+            dt.Year(),
+            dt.Hour(),
+            dt.Minute(),
+            dt.Second() );
+    Serial.print(datestring);
 }
