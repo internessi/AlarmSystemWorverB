@@ -58,14 +58,15 @@ void setup() {
   display.init();
   display.setContrast(255);
   display_text("starting");
-  BUZZ(20);
+  BUZZ(1000);
   LED(1,600);
-
+  BUZZ(500);
 
   // Wire.begin(21,22); // due to limited pins, use pin 0 and 2 for SDA, SCL
   Rtc.Begin();
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
   printDateTime(compiled);
+    Serial.println();
   RtcDateTime now = Rtc.GetDateTime();
   printDateTime(now);
   Serial.println();
